@@ -274,8 +274,14 @@ class Registry:
     def open_incidents_for_host(self, host: str) -> list[dict]:
         return self._rows("SELECT * FROM incidents WHERE host = ? AND status != 'closed'", (host,))
 
+    def recent_threat_incidents(self, since: float) -> list[dict]:
+        return self._rows(
+            "SELECT * FROM incidents WHERE bucket = 'threat' AND status != 'closed' AND updated_at >= ? ORDER BY opened_at",
+            (since,),
+        )
+
     def list_incidents(self, limit: int = 50) -> list[dict]:
-        return self._rows("SELECT * FROM incidents ORDER BY updated_at DESC LIMIT ?", (limit,))
+        return self._rows("SELECT * FROM incidents ORDER BY opened_at DESC LIMIT ?", (limit,))
 
     # -- response actions ----------------------------------------------------------
     def add_action(self, kind: str, *, host=None, incident_id=None, actor: str, detail: dict | None = None) -> None:
@@ -286,6 +292,18 @@ class Registry:
 
     def count_actions(self, kind: str, since: float) -> int:
         return self._row("SELECT COUNT(*) AS n FROM actions WHERE kind = ? AND ts >= ?", (kind, since))["n"]
+
+    def latest_action(self, kind: str, host: str | None = None) -> dict | None:
+        if host is None:
+            return self._row("SELECT * FROM actions WHERE kind = ? ORDER BY ts DESC LIMIT 1", (kind,))
+        return self._row("SELECT * FROM actions WHERE kind = ? AND host = ? ORDER BY ts DESC LIMIT 1", (kind, host))
+
+    def actions_for_incident(self, incident_id: str, host: str | None = None) -> list[dict]:
+        """Everything done for an incident, plus host-level actions (like a release) on its host."""
+        return self._rows(
+            "SELECT * FROM actions WHERE incident_id = ? OR (incident_id IS NULL AND host = ?) ORDER BY ts",
+            (incident_id, host),
+        )
 
     def list_actions(self, limit: int = 50) -> list[dict]:
         return self._rows("SELECT * FROM actions ORDER BY ts DESC LIMIT ?", (limit,))

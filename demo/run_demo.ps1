@@ -104,9 +104,16 @@ try {
     Scene 'Scene 5 - Flood: decoy abuse'
     Invoke-Python demo/attacker_sim.py flood
     Say 'Fifty uses of one key became one incident. The circuit breaker tripped: automatic response is paused.'
+    Wait-Presenter 'Next: what happens after the network is cut?'
+
+    Scene 'Scene 6 - After containment: finish the playbook for laptop-dev-07'
+    Say 'Already done automatically: evidence captured (with SHA-256), attacker IP blocked, sessions revoked, hunt run.'
+    Invoke-Python demo/respond.py laptop-dev-07
+    Say 'Release was refused until secrets were rotated, the burned decoy replaced and the laptop reimaged.'
+    Say 'Open "Incident report" on the card: every step, who did it, when, and the evidence hash.'
     Wait-Presenter 'Next: what if Mirage itself breaks?'
 
-    Scene 'Scene 6 - Kill the decoy sensor'
+    Scene 'Scene 7 - Kill the decoy sensor'
     Stop-Process -Id $processes['sensor'].Id -Force
     Say 'Watch the header: "PIPELINE DOWN" appears within about 15 seconds. Silence is an alert too.'
     if ($Auto) {

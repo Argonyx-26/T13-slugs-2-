@@ -82,6 +82,21 @@
   .tasks { margin: 8px 0 0; padding: 10px 12px; border-radius: 8px; background: #0c1117; border: 1px dashed #2c3a4d; }
   .tasks h3 { margin: 0 0 6px; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
   .tasks ul { margin: 0; padding-left: 18px; } .tasks li { margin: 3px 0; font-size: 13px; }
+  .pb-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .pb-bar { flex: 1; max-width: 160px; height: 6px; border-radius: 3px; background: #1d2633; overflow: hidden; }
+  .pb-bar i { display: block; height: 100%; background: var(--ok); }
+  .phase { margin: 8px 0 2px; font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  .step { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 8px; align-items: start; padding: 4px 0; font-size: 13px; }
+  .step .mark { font-weight: 700; text-align: center; }
+  .step.done .mark { color: var(--ok); } .step.pending .mark { color: var(--muted); }
+  .step.done .what { color: #c3cfdd; }
+  .step .by { color: var(--muted); font-size: 11.5px; margin-top: 1px; word-break: break-word; }
+  .step .mode { font-size: 10px; font-weight: 700; letter-spacing: .06em; padding: 1px 6px; border-radius: 5px; border: 1px solid #36455a; color: var(--muted); margin-left: 6px; }
+  .step .mode.auto { color: var(--low); border-color: rgba(108,182,255,.45); }
+  .step .mode.you { color: var(--medium); border-color: rgba(240,180,41,.45); }
+  .step button { padding: 3px 9px; font-size: 12px; }
+  .report { font-size: 12.5px; color: var(--low); }
+  button.gated { border-style: dashed; color: var(--muted); }
   .inc-actions { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
   table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
   th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
@@ -169,9 +184,18 @@ function paint(id, data, html) {
   $(id).innerHTML = html();
 }
 
-async function post(url) {
-  const res = await fetch(url, { method: "POST", headers: { "x-mirage-action": "1" } });
-  if (!res.ok) toast(`Request failed (${res.status})`, true);
+async function post(url, body) {
+  const res = await fetch(url, { method: "POST", headers: { "x-mirage-action": "1", "content-type": "application/json" },
+                                 body: JSON.stringify(body || {}) });
+  if (!res.ok) {
+    let msg = `Request failed (${res.status})`;
+    try {
+      const d = await res.json();
+      if (d.error) msg = d.error;
+      if (d.missing && d.missing.length) msg += " Still open: " + d.missing.map((m) => m.title.split(":")[0]).join(" · ");
+    } catch (e) { /* not JSON */ }
+    toast(msg, true);
+  }
   refresh();
 }
 
@@ -184,7 +208,7 @@ function title(inc) {
 
 function renderPills(st) {
   const h = st.health, b = st.breaker, reader = h.sensors && h.sensors.readaudit;
-  const shape = [h.pipeline_ok, h.starting, reader ? reader.ok : null, b.open, b.recent_auto, b.limit, b.window_minutes];
+  const shape = [h.pipeline_ok, h.starting, reader ? reader.ok : null, b.open, b.recent_auto, b.limit, b.window_minutes, st.campaigns];
   paint("pills", shape, () => {
     const out = [];
     if (h.pipeline_ok) out.push(`<span class="pill ok"><span class="dot"></span>Detection pipeline OK · self-test <span class="ago"></span></span>`);
@@ -193,6 +217,7 @@ function renderPills(st) {
     if (!reader) out.push(`<span class="pill"><span class="dot"></span>Read sensor off</span>`);
     else if (reader.ok) out.push(`<span class="pill ok"><span class="dot"></span>Read sensor live</span>`);
     else out.push(`<span class="pill bad"><span class="dot"></span>Read sensor silent</span>`);
+    for (const c of st.campaigns || []) out.push(`<span class="pill bad"><span class="dot"></span>Campaign: ${esc(c.ip)} hit ${esc(c.hosts.length)} hosts</span>`);
     if (b.open) out.push(`<span class="pill warn"><span class="dot"></span>Circuit breaker OPEN · approval-only <button data-act="reset">Reset</button></span>`);
     else out.push(`<span class="pill ok"><span class="dot"></span>Auto-response armed · ${esc(b.recent_auto)}/${esc(b.limit)} in ${esc(b.window_minutes)} min</span>`);
     return out.join("");
@@ -212,10 +237,37 @@ function renderHosts(hosts) {
       <div class="host-meta">${esc(h.owner)}${h.team ? " · " + esc(h.team) : ""} · ${esc(h.os)}</div>
       <div class="host-top" style="margin-top:6px">
         ${h.status === "isolated"
-          ? `<span class="state off"><span class="dot" style="background:var(--high)"></span>ISOLATED</span><button data-act="release" data-host="${esc(h.name)}">Release</button>`
+          ? `<span class="state off"><span class="dot" style="background:var(--high)"></span>ISOLATED</span><button data-act="release" data-host="${esc(h.name)}" class="${h.release_blockers ? "gated" : ""}"
+              title="${h.release_blockers ? "Finish the playbook first" : "Put the host back on the network"}">${h.release_blockers ? `Release · ${esc(h.release_blockers)} steps left` : "Release"}</button>`
           : `<span class="state on"><span class="dot" style="background:var(--ok)"></span>Online</span>`}
       </div>
     </div>`).join(""));
+}
+
+const PHASE = { contain: "1 · Contain", preserve: "2 · Preserve evidence", scope: "3 · Scope", eradicate: "4 · Eradicate", recover: "5 · Recover" };
+const MODE = { auto: ["AUTO", "auto"], action: ["YOU RUN", "you"], manual: ["YOU CONFIRM", "you"], approval: ["NEEDS APPROVAL", "you"] };
+
+function renderPlaybook(inc) {
+  const steps = (inc.tasks || []).filter((t) => t && typeof t === "object");
+  if (!steps.length) return "";
+  const closed = inc.status === "closed";
+  const done = steps.filter((t) => t.status === "done" || t.status === "n/a").length;
+  let html = "", phase = "";
+  for (const t of steps) {
+    if (t.phase !== phase) { phase = t.phase; html += `<div class="phase">${esc(PHASE[phase] || phase)}</div>`; }
+    const [modeText, modeClass] = MODE[t.mode] || [t.mode, ""];
+    let control = "";
+    if (t.status === "pending" && !closed) {
+      if (t.mode === "manual" && t.id !== "release") control = `<button data-act="step-done" data-id="${esc(inc.id)}" data-step="${esc(t.id)}">Mark done</button>`;
+      if (t.mode === "action") control = `<button data-act="step-run" data-id="${esc(inc.id)}" data-step="${esc(t.id)}">Run</button>`;
+    }
+    const by = t.status === "done" ? `${esc(t.by || "")} · ${esc(clock(t.at))}${t.detail ? " · " + esc(t.detail) : ""}` : esc(t.detail || "");
+    html += `<div class="step ${esc(t.status)}"><span class="mark">${t.status === "done" ? "✓" : "○"}</span>
+      <div><span class="what">${esc(t.title)}</span><span class="mode ${modeClass}">${esc(modeText)}</span>${t.required ? "" : ""}
+      ${by ? `<div class="by">${by}</div>` : ""}</div><span>${control}</span></div>`;
+  }
+  return `<div class="tasks"><div class="pb-head"><h3>Response playbook · ${done}/${steps.length} done</h3>
+    <span class="pb-bar"><i style="width:${Math.round(100 * done / steps.length)}%"></i></span></div>${html}</div>`;
 }
 
 function renderIncident(inc) {
@@ -241,7 +293,7 @@ function renderIncident(inc) {
     ? `<b>confirmed</b>: read by <span class="mono">${esc(reader.process)}</span> (PID ${esc(reader.pid)}) as ${esc(reader.user)}`
     : "planted location (no read telemetry yet)"]);
   if (s.contained) facts.push(["Containment", `${esc(s.contained.result)} by ${esc(s.contained.by)} at ${esc(clock(s.contained.ts))}`]);
-  const tasks = (inc.tasks || []).map((t) => `<li>${esc(t)}</li>`).join("");
+  const tasks = renderPlaybook(inc);
   const canApprove = inc.action === "approval_required" && inc.status === "open";
   return `
     <article class="incident ${esc(inc.severity)} ${inc.status === "closed" ? "closed" : ""}">
@@ -258,7 +310,8 @@ function renderIncident(inc) {
       <div class="inc-sub">${esc(s.why || inc.label)}</div>
       <ul class="timeline">${timeline}</ul>
       <dl class="facts">${facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join("")}</dl>
-      ${tasks ? `<div class="tasks"><h3>Next steps</h3><ul>${tasks}</ul></div>` : ""}
+      ${tasks}
+      <div class="inc-actions"><a class="report" href="/api/incidents/${encodeURIComponent(inc.id)}/report" target="_blank" rel="noopener">Incident report ↗</a></div>
       ${canApprove ? `<div class="inc-actions"><button class="primary" data-act="approve" data-id="${esc(inc.id)}">Approve containment of ${esc(inc.host)}</button></div>` : ""}
     </article>`;
 }
@@ -335,6 +388,8 @@ document.addEventListener("click", (e) => {
   if (act === "approve") post(`/api/incidents/${encodeURIComponent(btn.dataset.id)}/approve`);
   if (act === "release") post(`/api/hosts/${encodeURIComponent(btn.dataset.host)}/release`);
   if (act === "reset") post("/api/breaker/reset");
+  if (act === "step-done") post(`/api/incidents/${encodeURIComponent(btn.dataset.id)}/steps/${encodeURIComponent(btn.dataset.step)}/done`);
+  if (act === "step-run") post(`/api/incidents/${encodeURIComponent(btn.dataset.id)}/steps/${encodeURIComponent(btn.dataset.step)}/run`);
 });
 
 const events = new EventSource("/events");

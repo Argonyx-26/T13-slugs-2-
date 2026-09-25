@@ -33,8 +33,13 @@ def test_demo_scenario_end_to_end(settings, registry, deployed):
         assert all(i["severity"] == "HIGH" and i["stage"] == "used" for i in dev)
         aws_incident = next(i for i in dev if i["summary"]["token_kind"] == "aws")
         assert {a["what"] for a in aws_incident["summary"]["attempts"]} == {"sts:GetCallerIdentity", "s3:ListBuckets"}
-        assert any("AWS profile [default] (same file)" in t for t in aws_incident["tasks"])
-        assert any("Block 127.0.0.66" in t for t in aws_incident["tasks"])
+        steps = {step["id"]: step for step in aws_incident["tasks"]}
+        assert "AWS profile [default] (same file)" in steps["rotate_secrets"]["title"]
+        assert "Block 127.0.0.66" in steps["block_ip"]["title"]
+        for automatic in ("isolate", "block_ip", "revoke_sessions", "evidence", "hunt"):
+            assert steps[automatic]["status"] == "done", automatic
+        assert "sha256" in steps["evidence"]["detail"]
+        assert "fs-01" in steps["hunt"]["detail"], "same attacker hit the file share"
         (share,) = by_host["fs-01"]
         assert (share["action"], share["status"]) == ("approval_required", "open")
         hosts = {h["name"]: h["status"] for h in client.get("/api/hosts").json()}
@@ -68,6 +73,24 @@ def test_demo_scenario_end_to_end(settings, registry, deployed):
         health = client.get("/api/health").json()
         assert health["breaker"]["open"] is True
         assert registry.count_actions("auto_contain", 0) == 2
+
+        # After containment: the laptop can't go back online until the playbook is finished.
+        act = {"x-mirage-action": "1"}
+        blocked = client.post("/api/hosts/laptop-dev-07/release", headers=act)
+        assert blocked.status_code == 409
+        assert {m["step"] for m in blocked.json()["missing"]} >= {"rotate_secrets", "replace_decoy", "reimage"}
+        for incident in incidents_by_host(client)["laptop-dev-07"]:
+            for step in incident["tasks"]:
+                if step["status"] != "pending" or not step["required"]:
+                    continue
+                verb = "run" if step["mode"] == "action" else "done"
+                reply = client.post(f"/api/incidents/{incident['id']}/steps/{step['id']}/{verb}", headers=act,
+                                    json={"note": "demo"})
+                assert reply.status_code == 200, reply.text
+        released = client.post("/api/hosts/laptop-dev-07/release", headers=act)
+        assert released.status_code == 200 and released.json()["forced"] is False
+        report = client.get(f"/api/incidents/{aws_incident['id']}/report").text
+        assert "Response playbook" in report and "evidence_collected" in report and "release" in report
 
         # Dashboard is served and the decoy sensor doesn't advertise its framework.
         assert "MIRAGE ENGINE" in client.get("/").text

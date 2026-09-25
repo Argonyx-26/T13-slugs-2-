@@ -102,5 +102,6 @@ def deployed(settings, registry, keys):
 @pytest.fixture
 def engine(settings, registry, keys, deployed):
     alerter = Alerter(settings, Broadcaster(), out=lambda line: None)
-    responder = Responder(settings, registry, MockEDR(registry), alerter)
+    placer = Placer(settings, registry, keys)
+    responder = Responder(settings, registry, MockEDR(registry, settings.evidence_dir), alerter, replace_decoy=placer.replace)
     return Engine(settings, registry, keys, responder, alerter, Health(settings, alerter), own_pids=lambda: {4242})

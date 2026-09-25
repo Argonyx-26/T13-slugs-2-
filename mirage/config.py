@@ -85,6 +85,10 @@ class Settings:
         return self.data_dir / "pids"
 
     @property
+    def evidence_dir(self) -> Path:
+        return self.data_dir / "evidence"
+
+    @property
     def backup_dir(self) -> Path:
         return self.data_dir / "backups"
 

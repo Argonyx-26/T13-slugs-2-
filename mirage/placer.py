@@ -255,6 +255,7 @@ class Placer:
             ctx.update(service=service, url=url, api_key=api_key)
             identity, meta = service, {"service": service, "url": url}
             lookup, display = api_key, tokens.mask(api_key)
+            spec = {**spec, "service": service}
 
         colocated = self._colocated(target, template["mode"], planned)
         content = _render(spec["template"], ctx)
@@ -266,7 +267,7 @@ class Placer:
             "abs_path": str(target), "norm_path": norm(target), "template": spec["template"],
             "label": template["label"], "scope": spec.get("scope", template["scope"]),
             "technique": template["technique"], "mode": template["mode"], "created_file": int(created_file),
-            "colocated": colocated, "meta": {**meta, "backup": str(backup) if backup else None},
+            "colocated": colocated, "meta": {**meta, "backup": str(backup) if backup else None, "spec": spec},
             "deployed_at": time.time(),
         })
         return {"status": "deployed", "placement_id": pid, "display": display, "identity": identity,
@@ -313,6 +314,28 @@ class Placer:
                 if names:
                     labels.append(f"{sibling.name}: {', '.join(names)}")
         return labels
+
+    def replace(self, placement_id: str) -> dict:
+        """Swap a burned decoy for a fresh one at the same path.
+
+        The attacker knows the old key, so it must not stay in the file. Its token stays
+        active in the registry, though: if the attacker tries the old key again, it still
+        alerts and still points to this placement.
+        """
+        old = self.registry.get_placement(placement_id)
+        if old is None or old["status"] != "deployed":
+            raise ValueError("only a deployed decoy can be replaced")
+        host = self.registry.get_host(old["host"])
+        spec = old["meta"].get("spec") or {"template": old["template"], "path": old["rel_path"], "scope": old["scope"]}
+        target = Path(old["abs_path"])
+        if old["created_file"]:
+            target.unlink(missing_ok=True)
+        elif target.exists():
+            _remove_profile(target, old["meta"]["profile"])
+        self.registry.set_placement_status(placement_id, "burned")
+        result = self._place(host, spec, TEMPLATES[spec["template"]], target, self.registry.get_meta("org"), {norm(target)})
+        self.write_decoy_paths()
+        return result
 
     def write_decoy_paths(self) -> None:
         paths = [p["abs_path"] for p in self.registry.list_placements()]

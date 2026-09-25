@@ -12,14 +12,15 @@ from pathlib import Path
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 
 from . import pids
 from .alerting import Alerter, Broadcaster
 from .config import Settings
 from .keys import load_keys, verify
+from .placer import Placer
 from .registry import Registry
-from .response import EDRConnector, MockEDR, Responder
+from .response import EDRConnector, MockEDR, Responder, render_report
 from .triage import Engine
 
 STATIC = Path(__file__).parent / "static"
@@ -134,7 +135,9 @@ def create_control_app(settings: Settings, *, registry: Registry | None = None, 
     keys = load_keys(settings.key_path)
     broadcaster = Broadcaster()
     alerter = Alerter(settings, broadcaster, out=out)
-    responder = Responder(settings, registry, edr or MockEDR(registry), alerter)
+    placer = Placer(settings, registry, keys)
+    responder = Responder(settings, registry, edr or MockEDR(registry, settings.evidence_dir), alerter,
+                          replace_decoy=placer.replace)
     health = Health(settings, alerter)
     engine = Engine(settings, registry, keys, responder, alerter, health, own_pids=lambda: pids.own_pids(settings))
 
@@ -184,7 +187,8 @@ def create_control_app(settings: Settings, *, registry: Registry | None = None, 
             "org": registry.get_meta("org", {}),
             "health": health.evaluate(),
             "breaker": responder.breaker_state(),
-            "hosts": registry.list_hosts(),
+            "hosts": [{**h, "release_blockers": len(responder.release_blockers(h["name"]))} for h in registry.list_hosts()],
+            "campaigns": responder.campaigns(),
             "incidents": registry.list_incidents(60),
             "decoys": decoys,
             "stats": registry.stats(),
@@ -215,12 +219,58 @@ def create_control_app(settings: Settings, *, registry: Registry | None = None, 
         incident = await run_in_threadpool(responder.approve, incident_id, "analyst (dashboard)")
         return incident or JSONResponse({"error": "not found"}, status_code=404)
 
+    async def _body(request: Request) -> dict:
+        try:
+            data = await request.json()
+            return data if isinstance(data, dict) else {}
+        except ValueError:
+            return {}
+
+    def _outcome(result: dict | None) -> JSONResponse:
+        if result is None:
+            return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
+        return JSONResponse(result, status_code=200 if result.get("ok") else 409)
+
     @app.post("/api/hosts/{host}/release")
     async def release(host: str, request: Request):
         if not mutation_allowed(request):
             return JSONResponse({"error": "missing x-mirage-action header"}, status_code=403)
-        result = await run_in_threadpool(responder.release, host, "analyst (dashboard)")
-        return result or JSONResponse({"error": "not found"}, status_code=404)
+        body = await _body(request)
+        actor = str(body.get("actor") or "analyst (dashboard)")
+        result = await run_in_threadpool(responder.release, host, actor, bool(body.get("force")), str(body.get("reason") or ""))
+        return _outcome(result)
+
+    @app.post("/api/incidents/{incident_id}/steps/{step_id}/done")
+    async def step_done(incident_id: str, step_id: str, request: Request):
+        if not mutation_allowed(request):
+            return JSONResponse({"error": "missing x-mirage-action header"}, status_code=403)
+        body = await _body(request)
+        actor = str(body.get("actor") or "analyst (dashboard)")
+        return _outcome(await run_in_threadpool(responder.complete_step, incident_id, step_id, actor, str(body.get("note") or "")))
+
+    @app.post("/api/incidents/{incident_id}/steps/{step_id}/run")
+    async def step_run(incident_id: str, step_id: str, request: Request):
+        if not mutation_allowed(request):
+            return JSONResponse({"error": "missing x-mirage-action header"}, status_code=403)
+        body = await _body(request)
+        actor = str(body.get("actor") or "analyst (dashboard)")
+        return _outcome(await run_in_threadpool(responder.run_step, incident_id, step_id, actor))
+
+    @app.get("/api/incidents/{incident_id}/report")
+    async def report(incident_id: str):
+        def build():
+            incident = registry.get_incident(incident_id)
+            if incident is None:
+                return None
+            placement = registry.get_placement(incident["placement_id"])
+            host = registry.get_host(incident["host"])
+            return render_report(incident, placement, host, registry.actions_for_incident(incident_id, incident["host"]))
+
+        text = await run_in_threadpool(build)
+        if text is None:
+            return JSONResponse({"error": "not found"}, status_code=404)
+        return PlainTextResponse(text, media_type="text/markdown; charset=utf-8",
+                                 headers={"content-disposition": f'inline; filename="{incident_id}.md"'})
 
     @app.post("/api/breaker/reset")
     async def reset_breaker(request: Request):
