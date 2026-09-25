@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mirage Engine</title>
+<style>
+  :root {
+    --bg: #0b0f14; --panel: #121821; --panel-2: #0f141b; --border: #253041; --text: #e6edf3; --muted: #8b98a9;
+    --high: #ff5d5d; --high-bg: rgba(255, 93, 93, .12); --medium: #f0b429; --medium-bg: rgba(240, 180, 41, .12);
+    --low: #6cb6ff; --low-bg: rgba(108, 182, 255, .12); --ok: #3fb950; --ok-bg: rgba(63, 185, 80, .12);
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-padding-top: 84px; } /* keep focused buttons clear of the sticky header */
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;
+           padding: 14px 20px; background: rgba(11, 15, 20, .92); backdrop-filter: blur(6px); border-bottom: 1px solid var(--border); }
+  .brand { display: flex; align-items: baseline; gap: 10px; }
+  .brand h1 { margin: 0; font-size: 17px; letter-spacing: .18em; font-weight: 700; }
+  .brand span { color: var(--muted); font-size: 13px; }
+  .pills { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .pill { display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border-radius: 999px; border: 1px solid var(--border);
+          background: var(--panel); font-size: 12.5px; white-space: nowrap; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+  .pill.ok .dot { background: var(--ok); } .pill.ok { border-color: rgba(63,185,80,.4); }
+  .pill.bad { border-color: var(--high); background: var(--high-bg); color: #ffd7d7; } .pill.bad .dot { background: var(--high); animation: blink 1s infinite; }
+  .pill.warn { border-color: var(--medium); background: var(--medium-bg); color: #ffe7b0; } .pill.warn .dot { background: var(--medium); }
+  .pill button { margin-left: 4px; }
+  main { display: grid; gap: 16px; padding: 16px 20px 28px; grid-template-columns: 300px minmax(0, 1fr); max-width: 1500px; margin: 0 auto; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; min-width: 0; }
+  .panel > h2 { margin: 0; padding: 12px 16px; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+                border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; gap: 8px; }
+  .panel-body { padding: 12px; }
+  .wide { grid-column: 1 / -1; }
+  .bottom { display: grid; gap: 16px; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+  .host { padding: 11px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--panel-2); margin-bottom: 8px; }
+  .host:last-child { margin-bottom: 0; }
+  .host-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .host-name { font-family: var(--mono); font-size: 13.5px; font-weight: 600; }
+  .host-meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .host.isolated { border-color: var(--high); background: linear-gradient(0deg, var(--high-bg), var(--high-bg)), var(--panel-2); }
+  .state { font-size: 11.5px; font-weight: 700; letter-spacing: .06em; display: inline-flex; align-items: center; gap: 6px; }
+  .state.on { color: var(--ok); } .state.off { color: var(--high); }
+  .role { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; padding: 1px 7px; border-radius: 6px; border: 1px solid var(--border); color: var(--muted); }
+  .role.crown_jewel { color: #e7c6ff; border-color: #7b4fa6; }
+  .role.server { color: #b7d7ff; border-color: #3d5f8a; }
+  button { font: inherit; font-size: 12.5px; color: var(--text); background: #1d2633; border: 1px solid #36455a; border-radius: 8px; padding: 5px 11px; cursor: pointer; }
+  button:hover { background: #253245; }
+  button.primary { background: var(--high); border-color: var(--high); color: #1a0505; font-weight: 700; }
+  button.primary:hover { filter: brightness(1.08); }
+  button:focus-visible { outline: 2px solid var(--low); outline-offset: 2px; }
+  .empty { color: var(--muted); padding: 28px 12px; text-align: center; }
+  .incident { border: 1px solid var(--border); border-left: 4px solid var(--muted); border-radius: 10px; background: var(--panel-2); padding: 13px 15px; margin-bottom: 12px; }
+  .incident:last-child { margin-bottom: 0; }
+  .incident.HIGH { border-left-color: var(--high); } .incident.MEDIUM { border-left-color: var(--medium); } .incident.LOW { border-left-color: var(--low); }
+  .incident.closed { opacity: .55; }
+  .inc-top { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .badges { display: flex; gap: 6px; flex-wrap: wrap; }
+  .badge { font-size: 11px; font-weight: 700; letter-spacing: .06em; padding: 2px 8px; border-radius: 6px; border: 1px solid transparent; }
+  .badge.HIGH { background: var(--high-bg); color: var(--high); border-color: rgba(255,93,93,.45); }
+  .badge.MEDIUM { background: var(--medium-bg); color: var(--medium); border-color: rgba(240,180,41,.45); }
+  .badge.LOW { background: var(--low-bg); color: var(--low); border-color: rgba(108,182,255,.45); }
+  .badge.act { background: #1d2633; color: var(--text); border-color: #36455a; }
+  .badge.act.contain { background: var(--high); color: #1a0505; }
+  .badge.act.approve { background: var(--medium); color: #1f1500; }
+  .badge.act.breaker { background: transparent; color: var(--medium); border-color: var(--medium); }
+  .when { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .inc-title { margin: 8px 0 2px; font-size: 15.5px; font-weight: 650; }
+  .inc-sub { color: #c3cfdd; font-size: 13px; word-break: break-word; }
+  .mono { font-family: var(--mono); font-size: 12.5px; }
+  .timeline { margin: 10px 0 4px; padding: 0; list-style: none; border-left: 2px solid var(--border); }
+  .timeline li { position: relative; padding: 2px 0 6px 14px; font-size: 13px; word-break: break-word; }
+  .timeline li::before { content: ""; position: absolute; left: -6px; top: 7px; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+  .timeline li.stolen::before { background: var(--medium); } .timeline li.used::before { background: var(--high); }
+  .timeline .stage { font-size: 11px; font-weight: 700; letter-spacing: .08em; margin-right: 6px; }
+  .timeline li.stolen .stage { color: var(--medium); } .timeline li.used .stage { color: var(--high); }
+  .timeline li.tested::before { background: var(--low); } .timeline li.tested .stage { color: var(--low); }
+  td.nowrap { white-space: nowrap; }
+  .facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 3px 12px; margin: 8px 0; font-size: 12.5px; }
+  .facts dt { color: var(--muted); } .facts dd { margin: 0; word-break: break-word; }
+  .tasks { margin: 8px 0 0; padding: 10px 12px; border-radius: 8px; background: #0c1117; border: 1px dashed #2c3a4d; }
+  .tasks h3 { margin: 0 0 6px; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  .tasks ul { margin: 0; padding-left: 18px; } .tasks li { margin: 3px 0; font-size: 13px; }
+  .inc-actions { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+  td .note { color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+  .table-wrap { overflow-x: auto; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { font-size: 12px; padding: 4px 9px; border-radius: 8px; border: 1px solid var(--border); }
+  .chip.built { border-color: rgba(63,185,80,.5); background: var(--ok-bg); }
+  .chip.roadmap { border-style: dashed; color: var(--muted); }
+  .chip b { font-family: var(--mono); font-weight: 600; margin-right: 5px; }
+  .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
+  .stat { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 9px 11px; }
+  .stat .n { font-size: 20px; font-weight: 700; } .stat .l { color: var(--muted); font-size: 11.5px; }
+  .sub-h { margin: 16px 0 8px; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  #flash { position: fixed; inset: 0; pointer-events: none; z-index: 20; opacity: 0;
+           background: radial-gradient(ellipse at center, rgba(255, 40, 40, .15) 0%, rgba(255, 40, 40, .55) 100%); }
+  #flash.on { animation: flash 1.3s ease-out; }
+  #toast { position: fixed; top: 74px; left: 50%; transform: translateX(-50%); z-index: 21; max-width: min(92vw, 720px);
+           padding: 11px 16px; border-radius: 10px; background: #2a0d0f; border: 1px solid var(--high); color: #ffe1e1;
+           font-weight: 600; box-shadow: 0 10px 30px rgba(0,0,0,.45); display: none; }
+  #toast.warn { background: #2a2108; border-color: var(--medium); color: #ffeec2; }
+  @keyframes flash { 0% { opacity: 0; } 12% { opacity: 1; } 100% { opacity: 0; } }
+  @keyframes blink { 50% { opacity: .25; } }
+  @media (prefers-reduced-motion: reduce) { #flash.on { animation: none; } .pill.bad .dot { animation: none; } }
+  @media (max-width: 900px) {
+    main { grid-template-columns: 1fr; padding: 12px 16px 24px; }
+    .bottom { grid-template-columns: 1fr; }
+    header { padding: 12px 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="flash" aria-hidden="true"></div>
+<div id="toast" role="status" aria-live="assertive"></div>
+<header>
+  <div class="brand"><h1>MIRAGE ENGINE</h1><span id="org">decoy credentials that call home</span></div>
+  <div class="pills" id="pills"></div>
+</header>
+<main>
+  <section class="panel">
+    <h2><span>Hosts</span><span id="host-count"></span></h2>
+    <div class="panel-body" id="hosts"></div>
+  </section>
+  <section class="panel">
+    <h2><span>Incidents</span><span id="incident-count"></span></h2>
+    <div class="panel-body" id="incidents" aria-live="polite"></div>
+  </section>
+  <div class="wide bottom">
+    <section class="panel">
+      <h2><span>Decoy registry</span><span>one unique decoy per location</span></h2>
+      <div class="panel-body table-wrap" id="registry"></div>
+    </section>
+    <section class="panel">
+      <h2><span>Coverage</span><span>MITRE ATT&amp;CK</span></h2>
+      <div class="panel-body">
+        <div id="coverage"></div>
+        <div class="stats" id="stats"></div>
+      </div>
+    </section>
+  </div>
+</main>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const clock = (ts) => ts ? new Date(ts * 1000).toLocaleTimeString([], { hour12: false }) : "";
+const ago = (ts, now) => {
+  if (!ts) return "never";
+  const s = Math.max(0, Math.round((now || Date.now() / 1000) - ts));
+  return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.floor(s / 60)}m ago` : `${Math.floor(s / 3600)}h ago`;
+};
+const ROLE = { workstation: "Workstation", server: "Server", crown_jewel: "Crown jewel" };
+const ACTION = {
+  auto_contain: ["AUTO-CONTAINED", "contain"], approved_contained: ["CONTAINED (APPROVED)", "contain"],
+  already_contained: ["HOST ALREADY CONTAINED", ""], approval_required: ["APPROVAL REQUIRED", "approve"],
+  page: ["PAGED", ""], ticket: ["TICKET", ""], none: ["", ""],
+};
+let state = null;
+const drawn = {};  // last-rendered data per section: redraw only on change, so buttons stay put
+function paint(id, data, html) {
+  const key = JSON.stringify(data);
+  if (drawn[id] === key) return;
+  drawn[id] = key;
+  $(id).innerHTML = html();
+}
+
+async function post(url) {
+  const res = await fetch(url, { method: "POST", headers: { "x-mirage-action": "1" } });
+  if (!res.ok) toast(`Request failed (${res.status})`, true);
+  refresh();
+}
+
+function title(inc) {
+  const s = inc.summary || {};
+  if (inc.bucket === "benign") return `Harmless trigger on ${inc.host}: known scanner`;
+  if (inc.stage === "stolen") return `Decoy file read on ${inc.host}`;
+  return `Decoy ${s.token_kind === "aws" ? "AWS key" : "API key"} used, planted on ${inc.host}`;
+}
+
+function renderPills(st) {
+  const h = st.health, b = st.breaker, reader = h.sensors && h.sensors.readaudit;
+  const shape = [h.pipeline_ok, h.starting, reader ? reader.ok : null, b.open, b.recent_auto, b.limit, b.window_minutes];
+  paint("pills", shape, () => {
+    const out = [];
+    if (h.pipeline_ok) out.push(`<span class="pill ok"><span class="dot"></span>Detection pipeline OK · self-test <span class="ago"></span></span>`);
+    else if (h.starting) out.push(`<span class="pill"><span class="dot"></span>Starting self-test…</span>`);
+    else out.push(`<span class="pill bad"><span class="dot"></span>PIPELINE DOWN · last self-test <span class="ago"></span></span>`);
+    if (!reader) out.push(`<span class="pill"><span class="dot"></span>Read sensor off</span>`);
+    else if (reader.ok) out.push(`<span class="pill ok"><span class="dot"></span>Read sensor live</span>`);
+    else out.push(`<span class="pill bad"><span class="dot"></span>Read sensor silent</span>`);
+    if (b.open) out.push(`<span class="pill warn"><span class="dot"></span>Circuit breaker OPEN · approval-only <button data-act="reset">Reset</button></span>`);
+    else out.push(`<span class="pill ok"><span class="dot"></span>Auto-response armed · ${esc(b.recent_auto)}/${esc(b.limit)} in ${esc(b.window_minutes)} min</span>`);
+    return out.join("");
+  });
+  const agoEl = document.querySelector("#pills .ago");
+  if (agoEl) agoEl.textContent = ago(h.last_selftest, h.now);
+}
+
+function renderHosts(hosts) {
+  $("host-count").textContent = `${hosts.filter((h) => h.status === "isolated").length} isolated`;
+  paint("hosts", hosts, () => hosts.map((h) => `
+    <div class="host ${h.status === "isolated" ? "isolated" : ""}">
+      <div class="host-top">
+        <span class="host-name">${esc(h.name)}</span>
+        <span class="role ${esc(h.role)}">${esc(ROLE[h.role] || h.role)}</span>
+      </div>
+      <div class="host-meta">${esc(h.owner)}${h.team ? " · " + esc(h.team) : ""} · ${esc(h.os)}</div>
+      <div class="host-top" style="margin-top:6px">
+        ${h.status === "isolated"
+          ? `<span class="state off"><span class="dot" style="background:var(--high)"></span>ISOLATED</span><button data-act="release" data-host="${esc(h.name)}">Release</button>`
+          : `<span class="state on"><span class="dot" style="background:var(--ok)"></span>Online</span>`}
+      </div>
+    </div>`).join(""));
+}
+
+function renderIncident(inc) {
+  const s = inc.summary || {};
+  const [actText, actClass] = ACTION[inc.action] || [inc.action, ""];
+  const attempts = [...new Set((s.attempts || []).map((a) => a.what))];
+  const lastAttempt = (s.attempts || []).slice(-1)[0];
+  const reader = s.reader;
+  const timeline = (s.timeline || []).map((t) => {
+    const stage = inc.bucket === "benign" && t.stage === "used" ? "tested" : t.stage;
+    return `
+    <li class="${esc(stage)}"><span class="stage">${esc(stage.toUpperCase())}</span>
+      <span class="mono">${esc(clock(t.ts))}</span> ${esc(t.text)}${t.count ? ` <b>×${esc(t.count)}</b>` : ""}</li>`;
+  }).join("");
+  const facts = [
+    ["File", `<span class="mono">${esc(s.path)}</span> · ${esc(s.template_label)}`],
+    ["Decoy", `<span class="mono">${esc(s.display)}</span> · ${esc(s.identity)} · ${esc(s.scope)}`],
+  ];
+  if (s.source && s.source.ip) facts.push(["Source", `<span class="mono">${esc(s.source.ip)}</span> · ${esc(s.source.zone)} · ${esc(s.source.name)}`]);
+  if (attempts.length) facts.push(["Tried", `<span class="mono">${attempts.map(esc).join(" · ")}</span>`]);
+  if (lastAttempt && lastAttempt.ua) facts.push(["User-agent", `<span class="mono">${esc(lastAttempt.ua)}</span>`]);
+  if (inc.bucket !== "benign") facts.push(["Attribution", inc.attribution === "confirmed" && reader
+    ? `<b>confirmed</b>: read by <span class="mono">${esc(reader.process)}</span> (PID ${esc(reader.pid)}) as ${esc(reader.user)}`
+    : "planted location (no read telemetry yet)"]);
+  if (s.contained) facts.push(["Containment", `${esc(s.contained.result)} by ${esc(s.contained.by)} at ${esc(clock(s.contained.ts))}`]);
+  const tasks = (inc.tasks || []).map((t) => `<li>${esc(t)}</li>`).join("");
+  const canApprove = inc.action === "approval_required" && inc.status === "open";
+  return `
+    <article class="incident ${esc(inc.severity)} ${inc.status === "closed" ? "closed" : ""}">
+      <div class="inc-top">
+        <div class="badges">
+          <span class="badge ${esc(inc.severity)}">${esc(inc.severity)}</span>
+          ${actText ? `<span class="badge act ${actClass}">${esc(actText)}</span>` : ""}
+          ${inc.breaker_tripped ? `<span class="badge act breaker">BREAKER TRIPPED</span>` : ""}
+          ${inc.status === "closed" ? `<span class="badge act">CLOSED</span>` : ""}
+        </div>
+        <span class="when">${esc(clock(inc.updated_at))} · ${esc(inc.event_count)} event${inc.event_count === 1 ? "" : "s"}</span>
+      </div>
+      <div class="inc-title">${esc(title(inc))}</div>
+      <div class="inc-sub">${esc(s.why || inc.label)}</div>
+      <ul class="timeline">${timeline}</ul>
+      <dl class="facts">${facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join("")}</dl>
+      ${tasks ? `<div class="tasks"><h3>Next steps</h3><ul>${tasks}</ul></div>` : ""}
+      ${canApprove ? `<div class="inc-actions"><button class="primary" data-act="approve" data-id="${esc(inc.id)}">Approve containment of ${esc(inc.host)}</button></div>` : ""}
+    </article>`;
+}
+
+function renderIncidents(incidents) {
+  const open = incidents.filter((i) => i.status !== "closed");
+  $("incident-count").textContent = `${open.length} open`;
+  const high = open.filter((i) => i.severity === "HIGH").length;
+  document.title = high ? `(${high}) Mirage Engine` : "Mirage Engine";
+  paint("incidents", incidents, () => incidents.length ? incidents.map(renderIncident).join("")
+    : `<div class="empty">No decoy has been touched. Every decoy is unique, so the first touch will say exactly where it came from.</div>`);
+}
+
+function renderRegistry(decoys) {
+  paint("registry", decoys, () => `<table>
+    <thead><tr><th>Host</th><th>Decoy file</th><th>Key</th><th>Scope</th><th>Technique</th></tr></thead>
+    <tbody>${decoys.map((d) => `<tr>
+      <td class="mono nowrap">${esc(d.host)}</td>
+      <td><span class="mono">${esc(d.path)}</span><div class="note">${esc(d.label)}${d.colocated.length ? " · next to real secrets: " + esc(d.colocated.join("; ")) : ""}</div></td>
+      <td class="mono">${esc(d.display)}<div class="note">${esc(d.identity)}</div></td>
+      <td class="nowrap">${esc(d.scope)}</td>
+      <td class="mono">${esc(d.technique)}</td>
+    </tr>`).join("")}</tbody></table>`);
+}
+
+function renderCoverage(cov, stats) {
+  paint("coverage", cov, () => `
+    <div class="chips">${cov.built.map((c) => `<span class="chip built"><b>${esc(c.id)}</b>${esc(c.label)}</span>`).join("")}</div>
+    <div class="sub-h">Roadmap</div>
+    <div class="chips">${cov.roadmap.map((c) => `<span class="chip roadmap"><b>${esc(c.id)}</b>${esc(c.label)}</span>`).join("")}</div>`);
+  const cells = [
+    [stats.decoys || 0, "decoys deployed"], [stats.events || 0, "decoy events"],
+    [stats.unknown_credentials || 0, "unknown credentials ignored"], [stats.benign_reads || 0, "routine reads suppressed"],
+  ];
+  paint("stats", cells, () => cells.map(([n, l]) => `<div class="stat"><div class="n">${esc(n)}</div><div class="l">${esc(l)}</div></div>`).join(""));
+}
+
+let pendingToast = null;
+function render(st) {
+  if (st.org && st.org.name) $("org").textContent = `${st.org.name} · decoy credentials that call home`;
+  renderPills(st); renderHosts(st.hosts); renderIncidents(st.incidents); renderRegistry(st.decoys); renderCoverage(st.coverage, st.stats);
+  const inc = pendingToast && st.incidents.find((i) => i.id === pendingToast);
+  if (inc) { pendingToast = null; toast(`HIGH · ${title(inc)} · ${(ACTION[inc.action] || [inc.action])[0]}`); }
+}
+
+let inflight = false, again = false;
+async function refresh() {
+  if (inflight) { again = true; return; }
+  inflight = true;
+  try {
+    const res = await fetch("/api/state", { cache: "no-store" });
+    state = await res.json();
+    render(state);
+  } catch (e) { /* control plane restarting; the next tick retries */ }
+  inflight = false;
+  if (again) { again = false; setTimeout(refresh, 250); }
+}
+
+let toastTimer = null;
+function toast(text, warn) {
+  const el = $("toast");
+  el.textContent = text; el.className = warn ? "warn" : ""; el.style.display = "block";
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.style.display = "none"; }, 4500);
+}
+function flash() {
+  const el = $("flash");
+  el.classList.remove("on"); void el.offsetWidth; el.classList.add("on");
+}
+
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-act]");
+  if (!btn) return;
+  const act = btn.dataset.act;
+  if (act === "approve") post(`/api/incidents/${encodeURIComponent(btn.dataset.id)}/approve`);
+  if (act === "release") post(`/api/hosts/${encodeURIComponent(btn.dataset.host)}/release`);
+  if (act === "reset") post("/api/breaker/reset");
+});
+
+const events = new EventSource("/events");
+events.addEventListener("incident", (e) => {
+  const d = JSON.parse(e.data);
+  if (d.severity === "HIGH") { flash(); pendingToast = d.id; }
+  refresh();
+});
+events.addEventListener("alert", (e) => { const d = JSON.parse(e.data); toast(d.title, true); refresh(); });
+events.addEventListener("changed", () => refresh());
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

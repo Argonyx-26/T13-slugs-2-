@@ -1,0 +1,71 @@
+{
+  "org": {
+    "name": "Acme Corp",
+    "slug": "acme",
+    "internal_domain": "acme.internal",
+    "aws_region": "eu-west-1"
+  },
+  "hosts": [
+    {
+      "name": "laptop-dev-07",
+      "role": "workstation",
+      "owner": "r.iyer",
+      "team": "Engineering",
+      "os": "Windows 11",
+      "decoys": [
+        {"template": "aws_credentials_profile", "path": "Users/r.iyer/.aws/credentials"},
+        {"template": "env_backup", "path": "Users/r.iyer/projects/billing-service/deploy/.env.prod.bak", "service": "payments-api"}
+      ]
+    },
+    {
+      "name": "laptop-fin-02",
+      "role": "workstation",
+      "owner": "m.okafor",
+      "team": "Finance",
+      "os": "Windows 11",
+      "decoys": [
+        {"template": "onboarding_doc", "path": "Users/m.okafor/Documents/IT/vpn-and-api-access.md", "service": "reporting-api", "api_version": "v1"}
+      ]
+    },
+    {
+      "name": "laptop-hr-05",
+      "role": "workstation",
+      "owner": "s.lindqvist",
+      "team": "People Ops",
+      "os": "Windows 11",
+      "decoys": [
+        {"template": "ps_script", "path": "Users/s.lindqvist/scripts/sync_reports.ps1", "service": "hr-sync-api", "api_version": "v1"}
+      ]
+    },
+    {
+      "name": "laptop-ops-03",
+      "role": "workstation",
+      "owner": "d.mensah",
+      "team": "IT Operations",
+      "os": "Windows 11",
+      "decoys": [
+        {"template": "aws_credentials_profile", "path": "Users/d.mensah/.aws/credentials"}
+      ]
+    },
+    {
+      "name": "fs-01",
+      "role": "server",
+      "owner": "IT Operations",
+      "team": "IT Operations",
+      "os": "Windows Server 2022",
+      "decoys": [
+        {"template": "backup_script_aws", "path": "Shares/IT/scripts/legacy/s3_backup.ps1", "scope": "shared"}
+      ]
+    },
+    {
+      "name": "db-prod-01",
+      "role": "crown_jewel",
+      "owner": "Data Platform",
+      "team": "Data Platform",
+      "os": "Ubuntu 22.04",
+      "decoys": [
+        {"template": "env_backup", "path": "opt/reporting/config/.env.old", "service": "ledger-api"}
+      ]
+    }
+  ]
+}

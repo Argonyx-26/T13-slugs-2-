@@ -1,0 +1,10 @@
+# Runtime state: registry, keys, spools, backups, logs.
+data/
+
+# Generated decoy estate. It contains AKIA-format decoy keys, and GitHub push
+# protection would (correctly) block a push that includes them.
+demo/estate/
+
+__pycache__/
+*.pyc
+.pytest_cache/
