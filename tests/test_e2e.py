@@ -93,7 +93,11 @@ def test_demo_scenario_end_to_end(settings, registry, deployed):
         assert "Response playbook" in report and "evidence_collected" in report and "release" in report
 
         # Dashboard is served and the decoy sensor doesn't advertise its framework.
-        assert "MIRAGE ENGINE" in client.get("/").text
+        assert "MIRAGE ENGINE" in client.get("/classic").text
+        for route in ("/", "/dashboard"):  # React UI when built, classic dashboard otherwise
+            page = client.get(route)
+            assert page.status_code == 200 and page.headers["content-type"].startswith("text/html")
+            assert page.headers["cache-control"] == "no-store"
         probe = httpx.get(settings.sensor_url + "/docs")
         assert probe.status_code == 401 and "server" not in probe.headers and "fastapi" not in probe.text.lower()
 
@@ -125,3 +129,23 @@ def test_sensor_spools_while_control_is_down(settings, registry, deployed):
         sensor.stop()
         if control:
             control.stop()
+
+
+def test_built_ui_and_its_assets_are_served(settings, registry):
+    import re
+
+    from mirage.control import APP
+
+    control = ServerThread(create_control_app(settings, registry=registry, out=lambda line: None), settings.control_port).start()
+    try:
+        index = httpx.get(settings.control_url + "/dashboard").text
+        if not (APP / "index.html").exists():
+            assert "MIRAGE ENGINE" in index  # classic fallback when the React UI isn't built
+            return
+        assets = re.findall(r'(?:src|href)="(/assets/[^"]+)"', index)
+        assert assets, "the built index.html should reference hashed assets"
+        for asset in assets:
+            response = httpx.get(settings.control_url + asset)
+            assert response.status_code == 200 and len(response.content) > 0, asset
+    finally:
+        control.stop()

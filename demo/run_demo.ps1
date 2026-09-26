@@ -80,13 +80,14 @@ try {
     if (-not (Wait-Health $true 30)) { throw 'The control plane did not become healthy. See data\logs\.' }
     Say 'Control plane and decoy sensor are up, and the self-test token has made the round trip.'
     if (-not $NoBrowser) { Start-Process "$dashboard/" }
-    Wait-Presenter 'Dashboard is open. Walk through the decoy registry, then start the attack'
+    Say "Pitch intro: $dashboard/ (scroll the hero). Live dashboard: $dashboard/dashboard (classic view: $dashboard/classic)."
+    Wait-Presenter 'Scroll the landing page, click "Open the live dashboard", walk through the decoy registry, then start the attack'
 
     Scene 'Scene 2 - An attacker harvests laptop-dev-07 and the fs-01 file share'
     Invoke-Python demo/attacker_sim.py attacker
     Say 'Laptop: contained automatically. The decoy was local to it, so the attribution is solid.'
     Say 'File share: approval required. A shared folder means the planted host may not be the breached one.'
-    Say 'Point at "Next steps": the real [default] AWS key in the same file was stolen too. Rotate it.'
+    Say 'Point at the response playbook: the real [default] AWS key in the same file was stolen too. Rotate it.'
     Wait-Presenter 'Next: the crown jewel'
 
     Scene 'Scene 3 - A decoy taken from the production database server'

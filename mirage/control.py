@@ -13,6 +13,7 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 
 from . import pids
 from .alerting import Alerter, Broadcaster
@@ -24,6 +25,8 @@ from .response import EDRConnector, MockEDR, Responder, render_report
 from .triage import Engine
 
 STATIC = Path(__file__).parent / "static"
+CLASSIC = STATIC / "dashboard.html"  # the original single-file dashboard, always available at /classic
+APP = STATIC / "app"  # the React UI, built from web/ with `npm run build`
 
 BUILT_TECHNIQUES = {
     "T1552.001": "Credentials in files",
@@ -170,9 +173,27 @@ def create_control_app(settings: Settings, *, registry: Registry | None = None, 
             return JSONResponse({"ok": False, "error": "bad json"}, status_code=400)
         return await run_in_threadpool(engine.handle, event)
 
+    def page(prefer_app: bool = True) -> FileResponse:
+        # Fall back to the classic dashboard if the React UI hasn't been built.
+        index = APP / "index.html"
+        target = index if prefer_app and index.exists() else CLASSIC
+        return FileResponse(target, headers={"cache-control": "no-store"})
+
     @app.get("/")
+    async def home():
+        return page()
+
+    @app.get("/dashboard")
     async def dashboard():
-        return FileResponse(STATIC / "dashboard.html", headers={"cache-control": "no-store"})
+        return page()
+
+    @app.get("/classic")
+    async def classic():
+        return page(prefer_app=False)
+
+    if (APP / "assets").is_dir():
+        # Hashed file names, so these can be cached; index.html itself is never cached.
+        app.mount("/assets", StaticFiles(directory=APP / "assets"), name="assets")
 
     def state() -> dict:
         placements = registry.list_placements()

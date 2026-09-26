@@ -82,7 +82,7 @@ cd C:\Users\sbsai\Downloads\mirage
 powershell -ExecutionPolicy Bypass -File demo\run_demo.ps1
 ```
 
-The script builds a fresh simulated company (six "hosts"), deploys the decoys, starts both services and opens the dashboard at http://127.0.0.1:7000. Press Enter to move to the next scene. Use `-Auto` for a hands-free rehearsal and `-NoBrowser` to skip opening the page.
+The script builds a fresh simulated company (six "hosts"), deploys the decoys, starts both services and opens the landing page at http://127.0.0.1:7000 (scroll it as the pitch intro, then click **Open the live dashboard**, which is http://127.0.0.1:7000/dashboard). Press Enter to move to the next scene. Use `-Auto` for a hands-free rehearsal and `-NoBrowser` to skip opening the page.
 
 **With read auditing** (Administrator PowerShell):
 
@@ -112,6 +112,51 @@ This backs up your audit policy, turns on File System auditing, and adds a read-
 - **Read auditing hasn't been run live here.** The read-audit sensor's parsing and triage are covered by tests against a sample Event 4663 record. The live path needs an Administrator shell and has not yet been run on this machine.
 - **No login on the control plane.** It listens only on localhost, and action buttons need a custom header so other web pages can't click them. Production needs SSO/MFA and a host outside the production AD trust boundary.
 
+## Web UI
+
+The UI is a React app in `web/`. `npm run build` writes it into `mirage/static/app`, and the control plane serves it, so there's still one address and no second server:
+
+| Page | Address | What it's for |
+|---|---|---|
+| Landing | http://127.0.0.1:7000/ | Pitch intro. The hero card is the **live** dashboard, tilting flat as you scroll. |
+| Dashboard | http://127.0.0.1:7000/dashboard | The SOC view: hosts, incidents, response playbooks, decoy registry, coverage. |
+| Classic | http://127.0.0.1:7000/classic | The original single-file dashboard. It's also served at `/` if the React UI hasn't been built. |
+
+**Stack:** Vite 8, React 19, TypeScript 6, Tailwind CSS 4, shadcn/ui (`radix-nova` style), lucide-react icons, framer-motion, and sonner for toasts.
+
+**Where the two integrated components are used:**
+
+- **`ContainerScroll`** (`web/src/components/ui/container-scroll-animation.tsx`, from Aceternity, copied unchanged) is the landing hero. Instead of a screenshot, the card holds a live mini-dashboard: hosts, latest incidents and playbook progress. It is always current and needs no internet, so no stock images are used.
+- **`LatticeLoader`** (`web/src/components/ui/lattice-loader.tsx` + `.css`, from React Bits, ported to TypeScript with the same logic) is used everywhere the UI waits:
+  - **Connecting:** the dashboard's start-up screen shows a running lattice, which turns into a red cross if the control plane is unreachable.
+  - **Pipeline health:** a green check when the self-test is healthy, and a red cross counting up ("no self-test for 23.4s") when it goes silent.
+  - **Read sensor:** a running lattice while the sensor is live.
+  - **Page loading.**
+  - **Every action button** (Approve, Run, Mark done, Release, Reset breaker): the lattice runs while the request is in flight, then freezes into "Done in 0.4s" or "Refused after 0.2s", with the reason in a toast.
+
+**Why the components live in `components/ui`:** shadcn's CLI reads `web/components.json`, whose `ui` alias is `@/components/ui` (that is, `web/src/components/ui`). `npx shadcn add` installs components there, and the integrated components are imported through the same alias (`@/components/ui/container-scroll-animation`). Keeping copied primitives in `ui` and Mirage's own components in `components/mirage` separates code we copied from code we wrote. Linting skips `ui`, so copied code stays exactly as published.
+
+**Working on the UI** (needs Node 20+):
+
+```powershell
+cd web
+npm install      # once
+npm run dev      # http://localhost:5173, proxying /api and /events to the control plane on :7000
+npm run build    # type-check, then build into ../mirage/static/app
+npm run lint
+```
+
+**How the project was set up** (to repeat it from scratch). The shadcn CLI's Vite template already includes TypeScript, Tailwind CSS 4 (`@tailwindcss/vite`) and the `@/*` import alias, so no separate Tailwind or TypeScript install is needed:
+
+```powershell
+npx shadcn@latest init --template vite --name web --base radix --preset nova --no-monorepo
+cd web
+npx shadcn@latest add card badge table progress separator tooltip sonner
+npm install framer-motion
+```
+
+The built UI in `mirage/static/app` is meant to be committed, so the demo runs on a machine without Node. Rebuild it after changing anything in `web/`.
+
 ## Manual use
 
 ```powershell
@@ -136,7 +181,7 @@ Settings are overridable through environment variables: `MIRAGE_CONTROL_PORT`, `
 python -m pytest -q
 ```
 
-43 tests cover:
+44 tests cover:
 - token formats, uniqueness and forged-key rejection
 - safe placement: existing profiles untouched, a backup made, idempotent re-runs, no writes outside the estate, backdated files, dry-run
 - no decoy values stored in the registry
@@ -144,6 +189,7 @@ python -m pytest -q
 - grouping from "stolen" to "used", every cell of the decision table, and the circuit breaker
 - the playbook: release refused until required steps are done, no reimage before evidence, forced release needs a reason, burned decoys replaced while the old key still alerts, evidence hash matches the stored package, hunt links hosts hit by the same attacker
 - two end-to-end runs against real HTTP servers: the full demo (including finishing a playbook and the report), and events spooled while control is down
+- the page routes: the React UI at `/` and `/dashboard` with every asset it references, and the classic dashboard at `/classic`
 
 ## Layout
 
@@ -159,8 +205,15 @@ mirage/            the engine
   triage.py        classification, attribution, grouping, escalation
   response.py      decision table, circuit breaker, playbook, mock EDR/firewall/identity, reports
   alerting.py      pages, webhook, live feed
-  control.py       API, dashboard, self-test
-  static/dashboard.html
+  control.py       API, page routes, self-test
+  static/
+    dashboard.html   classic dashboard (/classic)
+    app/             built React UI (served at / and /dashboard)
+web/               React + TypeScript + Tailwind + shadcn source for the UI
+  src/components/ui/       shadcn primitives, ContainerScroll, LatticeLoader
+  src/components/mirage/   Mirage's own components (status bar, hosts, incidents, playbook, ...)
+  src/pages/               landing.tsx, dashboard.tsx
+  src/hooks/, src/lib/     live state (fetch + server-sent events), API types, routing
 demo/              estate.json, build_estate.py, attacker_sim.py, respond.py, run_demo.ps1, read-audit scripts
 docs/              flaws-and-fixes.md
 tests/
